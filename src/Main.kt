@@ -1,6 +1,7 @@
-import com.google.gson.Gson
+import com.tom.caching.FileSystemCache
 import tom.utils.requests.fetchBytes
 import java.io.BufferedWriter
+import java.io.File
 import java.io.FileWriter
 import java.net.URL
 import java.net.URLEncoder
@@ -15,19 +16,6 @@ const val red = "${27.toChar()}[91m"
 const val black = "${27.toChar()}[0m"
 const val ALICE_URL = "https://gutenberg.org/files/11/11-0.txt"
 
-fun <T> trying(block: () -> T): T? {
-    return try {
-        block()
-    } catch (e: Exception) {
-        null
-    }
-}
-
-fun String.parseJSONArray(): String {
-    val g = Gson()
-    val list = g.fromJson(this, List::class.java)
-    return list.joinToString("\n")
-}
 
 fun String.toWords(delim: Regex = "\\W+".toRegex()): List<String> {
     return this.split(delim)
@@ -39,14 +27,11 @@ fun termFrequency(term: String, words: Collection<String>): Int {
 
 fun allTermFrequencies(words: Collection<String>): Map<String, Int> {
     val map = mutableMapOf<String, Int>()
-    var idx = 0
     val size = words.size
-    for (word in words) {
-        idx++
-        print("Calculating term frequencies: %2.2f%%...\r".format(((idx * 100.0) / size)))
+    for ((idx, word) in words.withIndex()) {
         map.compute(word) { k, v -> (v ?: 0) + 1 }
+        printStatus("TF", idx, size)
     }
-    println()
     return map
 }
 
@@ -67,7 +52,15 @@ fun inverseDocumentFrequency(word: String, documents: Collection<Collection<Stri
     return value
 }
 
-fun tfidf(document: Collection<String>, corpus: Collection<Collection<String>>): Map<String, Double> {
+private fun printStatus(kind: String, idx: Int, size: Int) {
+    print("Calculating $kind: %2.2f%% done...\r".format((100.0 * idx.toDouble() / size.toDouble())))
+}
+
+fun tfidf(
+    document: Collection<String>,
+    corpus: Collection<Collection<String>>,
+    onProgress: (word: String, idx: Int, size: Int) -> Unit = ::printStatus
+): Map<String, Double> {
     val termFrequencies = mutableMapOf<String, Int>()
     for (word in document) {
         termFrequencies[word] = termFrequency(word, document)
@@ -76,16 +69,14 @@ fun tfidf(document: Collection<String>, corpus: Collection<Collection<String>>):
     val result = ConcurrentHashMap<String, Double>()
     val tfs = allTermFrequencies(document)
 
-    println("calculated term frequencies.")
     var idx = 0
     val size = tfs.size
     tfs.toList().parallelStream()
         .forEach { (word, freq) ->
             idx += 1
             result[word] = freq * inverseDocumentFrequency(word, corpus)
-            print("Calculating IDF: %2.2f%% done...\r".format((100.0 * idx.toDouble() / size.toDouble())))
+            onProgress(word, idx, size)
         }
-    println("Done")
     return result
 }
 
@@ -101,24 +92,28 @@ class Wikipedia(val articleName: String) {
                     )
                 }"
             )
-            return url.fetchBytes()?.toString(Charset.defaultCharset())
+            val content = url.fetchBytes()?.toString(Charset.defaultCharset())
+            // TODO: cache content and add URL to source files list
+            return content
         }
-
 }
 
 fun Wikipedia.readText(): String = content ?: error("Failed to fetch content from Wikipedia")
 val Wikipedia.nameWithoutExtension: String get() = articleName
 
+val sourceFileDataSource = MixedDataSource(FileSystemCache())
+
 fun main() {
-//    val sourceFile = File("Wizard101.txt")
-    val sourceFile = Wikipedia("Kinematics")
+
+    val sourceFile = File("Wizard101.txt")
+
+//    val sourceFile = Wikipedia("Linus_Torvalds")
+
     val text = sourceFile.readText()
-    val documents = loadAllSourceFiles()
+    val documents = loadAllSourceFiles(dataSource = sourceFileDataSource)
     val corpus = documents.map { it.toWords().map(String::lowercase) }
 
     val aliceWords = text.toWords().map(String::lowercase)
-//    val aliceWords = getPlainTextURL(ALICE_URL)?.toWords()?.map { it.lowercase() } ?: error("oops")
-    println("Text prepared!")
     val aliceTFIDF = tfidf(aliceWords, corpus + listOf(aliceWords))
 
     val result = aliceTFIDF.toList().sortedBy { e -> -e.second }

@@ -14,5 +14,7 @@
     <orderEntry type="library" name="jetbrains.kotlinx.coroutines.core" level="project" />
     <orderEntry type="library" name="TomUtils" level="project" />
     <orderEntry type="library" name="google.code.gson" level="project" />
+    <orderEntry type="library" name="lib" level="project" />
+    <orderEntry type="library" name="CacheManager" level="project" />
   </component>
 </module>
