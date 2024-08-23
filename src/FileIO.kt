@@ -30,13 +30,7 @@ data class MixedData(val type: String, val url: String) : FileIdentifier {
 
 open class MixedDataSource(override val cache: Cache<MixedData, String>) : CachedDataSource<MixedData, String> {
     override fun tryFromCache(source: MixedData): String? {
-        val cachedItem = cache.getItem(source)
-        if (cachedItem != null) {
-            onCacheRetrieve(cachedItem)
-            return cachedItem
-        }
-
-        return null
+        return cache.getItem(source)
     }
 
     override fun fetchFreshData(source: MixedData): String? {
@@ -46,7 +40,6 @@ open class MixedDataSource(override val cache: Cache<MixedData, String>) : Cache
             "json_array" -> trying { URL(source.url).readText().parseJSONArray() }
             else -> throw IllegalArgumentException("Must specify link as 'url' or 'file' not ${source.type}")
         }
-        if (gotten != null) onDataFetched(gotten)
         return gotten
     }
 
